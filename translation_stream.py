@@ -78,9 +78,31 @@ def _as_bool(value: Any) -> bool:
 
 
 def _final_flag(value: Any) -> bool:
+    if isinstance(value, list):
+        return any(_final_flag(item) for item in value)
     if not isinstance(value, dict):
         return False
-    return any(_as_bool(value.get(key)) for key in _FINAL_KEYS if key in value)
+    if any(_as_bool(value.get(key)) for key in _FINAL_KEYS if key in value):
+        return True
+    return any(
+        _final_flag(value[key])
+        for key in ("delta", "message", "data", "result", "output", "choices")
+        if key in value
+    )
+
+
+def _contains_delta(value: Any) -> bool:
+    if isinstance(value, list):
+        return any(_contains_delta(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if "delta" in value:
+        return True
+    return any(
+        _contains_delta(value[key])
+        for key in ("message", "data", "result", "output", "choices")
+        if key in value
+    )
 
 
 def _find_text(value: Any) -> Optional[str]:
@@ -134,14 +156,7 @@ def extract_text_chunk(payload: str) -> Optional[TextChunk]:
     if text is None:
         return None
     is_final = _final_flag(parsed)
-    kind = "snapshot"
-    if isinstance(parsed, dict):
-        for key in ("delta", "message", "data", "result", "output", "choices"):
-            nested = parsed.get(key)
-            if key == "delta":
-                kind = "delta"
-            if isinstance(nested, dict) and _final_flag(nested):
-                is_final = True
+    kind = "delta" if _contains_delta(parsed) else "snapshot"
     return TextChunk(text=text, is_final=is_final, kind=kind)
 
 
